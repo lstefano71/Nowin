@@ -41,98 +41,53 @@ namespace OwinHostingSample
 		{
 			_timer.Restart();
 			await Next.Invoke(context);
-			Console.WriteLine($"{context.Request.Path}: {_timer.ElapsedMilliseconds}ms");
+			context.TraceOutput.WriteLine($"{context.Request.Path}: {_timer.ElapsedMilliseconds}ms");
 		}
 	}
 
-	public sealed class GZipMiddleware
+	public class HeaderMiddleware : OwinMiddleware
 	{
-		private readonly Func<IDictionary<string, object>, Task> next;
+		readonly System.Net.WebHeaderCollection _add = new System.Net.WebHeaderCollection();
+		readonly System.Net.WebHeaderCollection _del = new System.Net.WebHeaderCollection();
 
-		public GZipMiddleware(Func<IDictionary<string, object>, Task> next)
+		public HeaderMiddleware(OwinMiddleware next)
+				: base(next)
 		{
-			this.next = next;
 		}
 
-		public async Task Invoke(IDictionary<string, object> environment)
+		public HeaderMiddleware(OwinMiddleware next, string name, string value)
+				: base(next)
 		{
-			var context = new OwinContext(environment);
+			_add.Add(name, value);
+		}
 
-			// Verifies that the calling client supports gzip encoding.
-			//if (!(from encoding in context.Request.Headers.GetValues("Accept-Encoding") ?? Enumerable.Empty<string>()
-			if (!(from encoding in context.Request.Headers["Accept-Encoding"].Split(',') ?? Enumerable.Empty<string>()
-						where String.Equals(encoding.Trim(), "gzip", StringComparison.Ordinal)
-						select encoding).Any()) {
-				await next(environment);
-				return;
-			}
 
-			// Replaces the response stream by a memory stream
-			// and keeps track of the real response stream.
-			var body = context.Response.Body;
-			context.Response.Body = new MemoryStream();
-
-			try {
-				await next(environment);
-
-				// Verifies that the response stream is still a readable and seekable stream.
-				if (!context.Response.Body.CanSeek || !context.Response.Body.CanRead) {
-					throw new InvalidOperationException("The response stream has been replaced by an unreadable or unseekable stream.");
+		public async override Task Invoke(IOwinContext context)
+		{
+			await Next.Invoke(context);
+			var h = context.Response.Headers;
+			foreach (var key in _add.AllKeys) {
+				if (!h.ContainsKey(key)) {
+					h.Add(key, new[] { _add[key] });
 				}
-
-				// Determines if the response stream meets the length requirements to be gzipped.
-				if (context.Response.Body.Length >= 4096) {
-					context.Response.Headers["Content-Encoding"] = "gzip";
-
-					// Determines if chunking can be safely used.
-					if (String.Equals(context.Request.Protocol, "HTTP/1.1", StringComparison.Ordinal)) {
-						context.Response.Headers["Transfer-Encoding"] = "chunked";
-
-						// Opens a new GZip stream pointing directly to the real response stream.
-						using (var gzip = new GZipStream(body, CompressionMode.Compress, leaveOpen: true)) {
-							// Rewinds the memory stream and copies it to the GZip stream.
-							context.Response.Body.Seek(0, SeekOrigin.Begin);
-							await context.Response.Body.CopyToAsync(gzip, 81920, context.Request.CallCancelled);
-						}
-
-						return;
-					}
-
-					// Opens a new buffer to determine the gzipped response stream length.
-					using (var buffer = new MemoryStream()) {
-						// Opens a new GZip stream pointing to the buffer stream.
-						using (var gzip = new GZipStream(buffer, CompressionMode.Compress, leaveOpen: true)) {
-							// Rewinds the memory stream and copies it to the GZip stream.
-							context.Response.Body.Seek(0, SeekOrigin.Begin);
-							await context.Response.Body.CopyToAsync(gzip, 81920, context.Request.CallCancelled);
-						}
-
-						// Rewinds the buffer stream and copies it to the real stream.
-						// See http://blogs.msdn.com/b/bclteam/archive/2006/05/10/592551.aspx
-						// to see why the buffer is only read after the GZip stream has been disposed.
-						buffer.Seek(0, SeekOrigin.Begin);
-						context.Response.ContentLength = buffer.Length;
-						await buffer.CopyToAsync(body, 81920, context.Request.CallCancelled);
-					}
-
-					return;
-				}
-
-				// Rewinds the memory stream and copies it to the real response stream.
-				context.Response.Body.Seek(0, SeekOrigin.Begin);
-				context.Response.ContentLength = context.Response.Body.Length;
-				await context.Response.Body.CopyToAsync(body, 81920, context.Request.CallCancelled);
-			} finally {
-				// Restores the real stream in the environment dictionary.
-				context.Response.Body = body;
+				throw new NotImplementedException();
 			}
 		}
 	}
+
 	public class Startup
 	{
 		public void Configuration(IAppBuilder app)
 		{
-			app.UseErrorPage();
+			app.Use((context, next) =>
+			{
+				var req = context.Request;
+				context.TraceOutput.WriteLine("{0} {1}{2} {3}", req.Method, req.PathBase, req.Path, req.QueryString);
+				return next();
+			});
+
+			app.UseErrorPage(new Microsoft.Owin.Diagnostics.ErrorPageOptions { SourceCodeLineCount = 20 });
+			app.Use<HeaderMiddleware>("X-stef", "Edge");
 			app.UseSendFileFallback();
 			app.Use<TimerMiddleware>();
 
