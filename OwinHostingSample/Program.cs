@@ -70,7 +70,6 @@ namespace OwinHostingSample
 				if (!h.ContainsKey(key)) {
 					h.Add(key, new[] { _add[key] });
 				}
-				throw new NotImplementedException();
 			}
 		}
 	}
@@ -96,6 +95,23 @@ namespace OwinHostingSample
 			app.UseFileServer(new FileServerOptions {
 				FileSystem = new PhysicalFileSystem("."),
 				RequestPath = new PathString("/files"),
+				EnableDirectoryBrowsing = true
+			});
+
+			var zip1 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
+			var zip2 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
+			var zip3 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
+
+			var dic = new SortedDictionary<string, IFileSystem>(StringComparer.OrdinalIgnoreCase) {
+				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 }
+			};
+
+			var fs = new WildHeart.Owin.FileSystems.CompositeFileSystem(dic);
+
+			app.UseFileServer(new FileServerOptions {
+				//FileSystem = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip"),
+				FileSystem = fs,
+				RequestPath = new PathString("/zip"),
 				EnableDirectoryBrowsing = true
 			});
 
