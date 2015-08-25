@@ -13,7 +13,7 @@ namespace WildHeart.Owin.FileSystems
 	{
 		readonly Dictionary<string, IFileInfo> _fs = new Dictionary<string, IFileInfo>(StringComparer.OrdinalIgnoreCase);
 		readonly Dictionary<string, IList<IFileInfo>> _dir = new Dictionary<string, IList<IFileInfo>>(StringComparer.OrdinalIgnoreCase);
-		readonly IList<Tuple<string, IFileSystem>> _fslist = new List<Tuple<string, IFileSystem>>();
+		readonly IEnumerable<Tuple<string, IFileSystem>> _fslist;
 
 		IEnumerable<string> NewSegments(string path)
 		{
@@ -33,7 +33,9 @@ namespace WildHeart.Owin.FileSystems
 			var ixs = fss.OrderBy(fs => fs.Item1, StringComparer.OrdinalIgnoreCase)
 				.Select((fs, ix) => ix);
 
-			_fslist = fss.OrderBy(fs => fs.Item1, StringComparer.OrdinalIgnoreCase).Reverse().ToList();
+			_fslist = fss.OrderByDescending(fs => fs.Item1, StringComparer.OrdinalIgnoreCase).Select(fs => 
+				Tuple.Create(Util.CombinePath(fs.Item1,""),fs.Item2)
+			);
 
       foreach (var ix in ixs) {
 				var fs = fss[ix];
@@ -48,7 +50,7 @@ namespace WildHeart.Owin.FileSystems
 						continue;
 
 					var name = s.Substring(s.TrimEnd('/').LastIndexOf('/')).Trim('/');
-					_fs[s] = new FakeDir() { Name = name };
+					_fs[s] = new CompositePlaceHolderDir() { Name = name };
 				}
 			}
 
@@ -107,7 +109,7 @@ namespace WildHeart.Owin.FileSystems
 
 		}
 
-		class FakeDir : IFileInfo
+		class CompositePlaceHolderDir : IFileInfo
 		{
 			public bool IsDirectory
 			{

@@ -163,6 +163,7 @@ namespace OwinHostingSample
 		public MyMimeSet()
 		{
 			Mappings[".json"] = "application/json";
+			Mappings[".md"] = "text/plain";
 		}
 	}
 }
