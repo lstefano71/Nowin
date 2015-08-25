@@ -13,6 +13,7 @@ namespace WildHeart.Owin.FileSystems
 	{
 		readonly Dictionary<string, IFileInfo> _fs = new Dictionary<string, IFileInfo>(StringComparer.OrdinalIgnoreCase);
 		readonly Dictionary<string, IList<IFileInfo>> _dir = new Dictionary<string, IList<IFileInfo>>(StringComparer.OrdinalIgnoreCase);
+		readonly IList<Tuple<string, IFileSystem>> _fslist = new List<Tuple<string, IFileSystem>>();
 
 		IEnumerable<string> NewSegments(string path)
 		{
@@ -29,10 +30,12 @@ namespace WildHeart.Owin.FileSystems
 
 		public CompositeFileSystem(IList<Tuple<string, IFileSystem>> fss)
 		{
-			var ixs = fss.OrderBy(fs => fs.Item1,StringComparer.OrdinalIgnoreCase)
-				.Zip(Enumerable.Range(0, fss.Count), (fs, ix) => ix);
+			var ixs = fss.OrderBy(fs => fs.Item1, StringComparer.OrdinalIgnoreCase)
+				.Select((fs, ix) => ix);
 
-			foreach (var ix in ixs) {
+			_fslist = fss.OrderBy(fs => fs.Item1, StringComparer.OrdinalIgnoreCase).Reverse().ToList();
+
+      foreach (var ix in ixs) {
 				var fs = fss[ix];
 				var k = fs.Item1;
 				var n = Util.CombinePath(k, "");
@@ -93,7 +96,15 @@ namespace WildHeart.Owin.FileSystems
 
 		public bool TryGetFileInfo(string subpath, out IFileInfo fileInfo)
 		{
-			return _fs.TryGetValue(subpath, out fileInfo);
+			var res = _fs.TryGetValue(subpath, out fileInfo);
+			if (res)
+				return res;
+			var fs = (from f in _fslist where subpath.StartsWith(f.Item1) select f).FirstOrDefault();
+			if (fs != null)
+				return fs.Item2.TryGetFileInfo(subpath.Substring(fs.Item1.Length), out fileInfo);
+
+			return false;
+
 		}
 
 		class FakeDir : IFileInfo

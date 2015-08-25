@@ -9,6 +9,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Owin.StaticFiles.ContentTypes;
 
 namespace OwinHostingSample
 {
@@ -96,8 +97,7 @@ namespace OwinHostingSample
 	{
 		public void Configuration(IAppBuilder app)
 		{
-			app.Use((context, next) =>
-			{
+			app.Use((context, next) => {
 				var req = context.Request;
 				context.TraceOutput.WriteLine("{0} {1}{2} {3}", req.Method, req.PathBase, req.Path, req.QueryString);
 				return next();
@@ -119,7 +119,8 @@ namespace OwinHostingSample
 			var zip1 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
 			var zip2 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
 			var zip3 = new WildHeart.Owin.FileSystems.ZipFileSystem(File.ReadAllBytes("TestZip.zip"));
-			var df1 = new PhysicalFileSystem(".");
+			//var df1 = new PhysicalFileSystem(".");
+			var df1 = new PhysicalFileSystem(@"k:\users\klaus\JS");
 
 			var dic = new List<Tuple<string, IFileSystem>>() {
 				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 },
@@ -133,12 +134,16 @@ namespace OwinHostingSample
 
 			var fs = new WildHeart.Owin.FileSystems.CompositeFileSystem(dic);
 
-			app.UseFileServer(new FileServerOptions {
+			var fso = new FileServerOptions {
 				//FileSystem = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip"),
 				FileSystem = fs,
 				RequestPath = new PathString("/composite"),
 				EnableDirectoryBrowsing = true
-			});
+			};
+
+			fso.StaticFileOptions.ContentTypeProvider = new MyMimeSet();
+
+			app.UseFileServer(fso);
 
 			app.Run(context => {
 				if (context.Request.Path.Value == "/") {
@@ -147,8 +152,17 @@ namespace OwinHostingSample
 				}
 
 				context.Response.StatusCode = 404;
-				return Task.Delay(0);
+				return context.Response.WriteAsync($"<p><b>{context.Request.Path}</b>: these are not the droids you are looking for!</p>");
+				//return Task.Delay(0);
 			});
+		}
+	}
+
+	internal class MyMimeSet : Microsoft.Owin.StaticFiles.ContentTypes.FileExtensionContentTypeProvider
+	{
+		public MyMimeSet()
+		{
+			Mappings[".json"] = "application/json";
 		}
 	}
 }
