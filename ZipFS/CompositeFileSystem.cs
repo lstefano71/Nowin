@@ -11,49 +11,67 @@ namespace WildHeart.Owin.FileSystems
 {
 	public class CompositeFileSystem : IFileSystem
 	{
-		readonly Dictionary<string,IFileInfo>_fs = new Dictionary<string,IFileInfo>(StringComparer.OrdinalIgnoreCase);
+		readonly Dictionary<string, IFileInfo> _fs = new Dictionary<string, IFileInfo>(StringComparer.OrdinalIgnoreCase);
 		readonly Dictionary<string, IList<IFileInfo>> _dir = new Dictionary<string, IList<IFileInfo>>(StringComparer.OrdinalIgnoreCase);
 
-		public CompositeFileSystem(SortedDictionary<string,IFileSystem> fss)
-		{			
-			foreach(var k in fss.Keys) {
+		IEnumerable<string> NewSegments(string path)
+		{
+			var dirs = path.Substring(0, path.LastIndexOf('/')).Split('/');
+			var c = "";
+			foreach (var cd in dirs) {
+				c = Util.CombinePath(c, cd, "");
+				c = c.Length > 0 ? c : "/";
+				if (!_fs.ContainsKey(c))
+					yield return c;
+			}
+
+		}
+
+		public CompositeFileSystem(IList<Tuple<string, IFileSystem>> fss)
+		{
+			var ixs = fss.OrderBy(fs => fs.Item1,StringComparer.OrdinalIgnoreCase)
+				.Zip(Enumerable.Range(0, fss.Count), (fs, ix) => ix);
+
+			foreach (var ix in ixs) {
+				var fs = fss[ix];
+				var k = fs.Item1;
 				var n = Util.CombinePath(k, "");
-        ProcessPath(fss[k], "/", n);
+				ProcessPath(fs.Item2, "/", n);
+			}
+
+			foreach (var p in _fs.Keys.ToArray()) {
+				foreach (var s in NewSegments(p)) {
+					if (s.Equals("/"))
+						continue;
+
+					var name = s.Substring(s.TrimEnd('/').LastIndexOf('/')).Trim('/');
+					_fs[s] = new FakeDir() { Name = name };
+				}
 			}
 
 			var dirs = from nv in _fs
 								 let k = nv.Key.TrimEnd('/')
 								 group nv by k.Length > 0 ? k.Substring(0, k.LastIndexOf('/')) : "";
-								 
+
 			foreach (var g in dirs) {
 				var k = g.Key.Length > 0 ? Util.CombinePath(g.Key, "") : "/";
-        _dir[k] = g.Select(v => v.Value).ToList();
+				_dir[k] = g.Select(v => v.Value).ToList();
 			}
-			return;			
-    }
-		
+			return;
+		}
+
 		private void ProcessPath(IFileSystem fs, string curroot, string main)
 		{
 			IEnumerable<IFileInfo> dir;
 			var res = fs.TryGetDirectoryContents(curroot, out dir);
 			if (!res)
 				return;
-
 			var d = Util.CombinePath(main, curroot);
-			var dirs = d.Split('/');
-			var c = "";
-      foreach (var cd in dirs) {
-				c = Util.CombinePath(c, cd,"");
-				c = c.Length > 0 ? c : "/";
-				if (!_fs.ContainsKey(c)) {
-					_fs[c] = new FakeDir() { Name = cd };
-				}
-			}
 
 			foreach (var f in dir) {
-				var key = f.IsDirectory ? Util.CombinePath(main, curroot, f.Name,"") : 
-					Util.CombinePath(main, curroot, f.Name);
-        _fs[key] = f;
+				var key = f.IsDirectory ? Util.CombinePath(d, f.Name, "") :
+					Util.CombinePath(d, f.Name);
+				_fs[key] = f;
 				if (f.IsDirectory)
 					ProcessPath(fs, f.Name, d);
 			}

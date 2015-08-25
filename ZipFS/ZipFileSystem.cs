@@ -13,12 +13,17 @@ namespace WildHeart.Owin.FileSystems
 	public class ZipFileSystem : IFileSystem
 	{
 		string _filename;
-		System.IO.Compression.ZipArchive _zip;
+		ZipArchive _zip;
 
 		public ZipFileSystem(string fname)
 		{
 			_filename = GetFullName(fname);
-			_zip = System.IO.Compression.ZipFile.OpenRead(_filename);
+			_zip = ZipFile.OpenRead(_filename);
+		}
+
+		public ZipFileSystem(byte[] content)
+		{
+			_zip = new ZipArchive(new MemoryStream(content));
 		}
 
 		public bool TryGetFileInfo(string subpath, out IFileInfo fileInfo)

@@ -12,6 +12,24 @@ using System.Threading.Tasks;
 
 namespace OwinHostingSample
 {
+	public static class TupleListExtensions
+	{
+		public static void Add<T1, T2>(
+						this IList<Tuple<T1, T2>> list, T1 item1, T2 item2)
+		{
+			list.Add(Tuple.Create(item1, item2));
+		}
+
+		public static void Add<T1, T2, T3>(
+						this IList<Tuple<T1, T2, T3>> list, T1 item1, T2 item2, T3 item3)
+		{
+			list.Add(Tuple.Create(item1, item2, item3));
+		}
+
+	}
+
+
+
 	static class Program
 	{
 		static void Main(string[] args)
@@ -100,11 +118,16 @@ namespace OwinHostingSample
 
 			var zip1 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
 			var zip2 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
-			var zip3 = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip");
+			var zip3 = new WildHeart.Owin.FileSystems.ZipFileSystem(File.ReadAllBytes("TestZip.zip"));
+			var df1 = new PhysicalFileSystem(".");
 
-			var dic = new SortedDictionary<string, IFileSystem>(StringComparer.OrdinalIgnoreCase) {
-				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 }
+			var dic = new List<Tuple<string, IFileSystem>>() {
+				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 }, { "/secret/root", df1 }, { "/sub/root", df1 }, {"/same", zip1 }, {"/same", df1 }
 			};
+
+			//var dic = new List<Tuple<string,IFileSystem>> { 
+			//	{ "/",zip1 }, { "/", df1 }
+			//};
 
 			var fs = new WildHeart.Owin.FileSystems.CompositeFileSystem(dic);
 
