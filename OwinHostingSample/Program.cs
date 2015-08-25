@@ -122,7 +122,9 @@ namespace OwinHostingSample
 			var df1 = new PhysicalFileSystem(".");
 
 			var dic = new List<Tuple<string, IFileSystem>>() {
-				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 }, { "/secret/root", df1 }, { "/sub/root", df1 }, {"/same", zip1 }, {"/same", df1 }
+				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 },
+				{ "/secret/root", df1 }, { "/sub/root", df1 },
+				{ "/SAME", zip1 }, {"/same", df1 }
 			};
 
 			//var dic = new List<Tuple<string,IFileSystem>> { 
@@ -134,7 +136,7 @@ namespace OwinHostingSample
 			app.UseFileServer(new FileServerOptions {
 				//FileSystem = new WildHeart.Owin.FileSystems.ZipFileSystem("TestZip.zip"),
 				FileSystem = fs,
-				RequestPath = new PathString("/zip"),
+				RequestPath = new PathString("/composite"),
 				EnableDirectoryBrowsing = true
 			});
 

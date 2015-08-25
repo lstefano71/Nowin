@@ -51,7 +51,8 @@ namespace WildHeart.Owin.FileSystems
 
 			var dirs = from nv in _fs
 								 let k = nv.Key.TrimEnd('/')
-								 group nv by k.Length > 0 ? k.Substring(0, k.LastIndexOf('/')) : "";
+								 let gk = k.Length > 0 ? k.Substring(0, k.LastIndexOf('/')) : ""
+								 group nv by gk.ToLowerInvariant();
 
 			foreach (var g in dirs) {
 				var k = g.Key.Length > 0 ? Util.CombinePath(g.Key, "") : "/";
