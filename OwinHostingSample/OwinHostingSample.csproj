@@ -100,9 +100,9 @@
       <Project>{eff3b76f-e9e4-4da6-b46d-e2dea456545e}</Project>
       <Name>Nowin</Name>
     </ProjectReference>
-    <ProjectReference Include="..\ZipFS\FileSystems.csproj">
+    <ProjectReference Include="..\ZipFS\WildHeart.Owin.csproj">
       <Project>{1882892f-7c96-4dc6-a382-5365a8fb9a0b}</Project>
-      <Name>FileSystems</Name>
+      <Name>WildHeart.Owin</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

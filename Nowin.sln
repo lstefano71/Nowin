@@ -15,7 +15,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OwinHostingSample", "OwinHo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Compression", "Compression\Compression.csproj", "{BA9DCD2F-ED03-4E2F-9480-FA1E7597F9A8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileSystems", "ZipFS\FileSystems.csproj", "{1882892F-7C96-4DC6-A382-5365A8FB9A0B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WildHeart.Owin", "ZipFS\WildHeart.Owin.csproj", "{1882892F-7C96-4DC6-A382-5365A8FB9A0B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -36,7 +36,7 @@ namespace OwinHostingSample
 		static void Main(string[] args)
 		{
 			var options = new StartOptions {
-				ServerFactory = "Nowin",
+				// ServerFactory = "Nowin",
 				Port = 8080
 			};
 
@@ -63,36 +63,6 @@ namespace OwinHostingSample
 			context.TraceOutput.WriteLine($"{context.Request.Path}: {_timer.ElapsedMilliseconds}ms");
 		}
 	}
-
-	public class HeaderMiddleware : OwinMiddleware
-	{
-		readonly System.Net.WebHeaderCollection _add = new System.Net.WebHeaderCollection();
-		readonly System.Net.WebHeaderCollection _del = new System.Net.WebHeaderCollection();
-
-		public HeaderMiddleware(OwinMiddleware next)
-				: base(next)
-		{
-		}
-
-		public HeaderMiddleware(OwinMiddleware next, string name, string value)
-				: base(next)
-		{
-			_add.Add(name, value);
-		}
-
-
-		public async override Task Invoke(IOwinContext context)
-		{
-			await Next.Invoke(context);
-			var h = context.Response.Headers;
-			foreach (var key in _add.AllKeys) {
-				if (!h.ContainsKey(key)) {
-					h.Add(key, new[] { _add[key] });
-				}
-			}
-		}
-	}
-
 	public class Startup
 	{
 		public void Configuration(IAppBuilder app)
@@ -104,7 +74,7 @@ namespace OwinHostingSample
 			});
 
 			app.UseErrorPage(new Microsoft.Owin.Diagnostics.ErrorPageOptions { SourceCodeLineCount = 20 });
-			app.Use<HeaderMiddleware>("X-stef", "Edge");
+			app.Use<WildHeart.Owin.Middleware.HeaderMiddleware>("X-UA-Compatible","IE=Edge");
 			app.UseSendFileFallback();
 			app.Use<TimerMiddleware>();
 
@@ -123,7 +93,7 @@ namespace OwinHostingSample
 			var df1 = new PhysicalFileSystem(@"k:\users\klaus\JS");
 
 			var dic = new List<Tuple<string, IFileSystem>>() {
-				{ "/", zip1 }, { "/sub", zip2 }, { "/sub1", zip3 },
+				{ "/", zip1 }, { "/sub", zip2 }, { "/inMemory", zip3 },
 				{ "/secret/root", df1 }, { "/sub/root", df1 },
 				{ "/SAME", zip1 }, {"/same", df1 }
 			};
@@ -148,7 +118,11 @@ namespace OwinHostingSample
 			app.Run(context => {
 				if (context.Request.Path.Value == "/") {
 					context.Response.ContentType = "text/plain";
-					return context.Response.WriteAsync("Hello World! It's now " + DateTime.Now);
+          var txt = "Hello World! It's now " + DateTime.Now;
+          context.Response.ETag = DateTime.Now.Ticks.ToString("x");
+          context.Response.Write(txt);
+          return Task.Delay(0);
+          //return context.Response.WriteAsync(txt);
 				}
 
 				context.Response.StatusCode = 404;
