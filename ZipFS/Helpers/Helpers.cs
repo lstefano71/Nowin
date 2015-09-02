@@ -49,15 +49,25 @@ namespace WildHeart.Owin
       });
     }
 
-    public static IAppBuilder Use(IAppBuilder app, Func<IOwinContext,bool> callback)
+    public static IAppBuilder Use(IAppBuilder app, Func<IOwinContext,object[], bool> callback,params object[] args)
 		{
-			//app.Use<HeaderMiddleware>("X-UA-Compatible", "IE=Edge");
 			return app.Use((ctx, next) => {
-				bool res = callback(ctx);
+				bool res = callback(ctx,args);
 				if (!res)
 					return next();
 				return Task.Delay(0);
 			});
 		}
-	}
+
+    public static IAppBuilder UseFromPool(IAppBuilder app, string pool, string fnname, Func<string, string, IOwinContext, bool> callback)
+    {
+      return app.Use((ctx, next) => {
+        bool res = callback(pool, fnname, ctx);
+        if (!res)
+          return next();
+        return Task.Delay(0);
+      });
+    }
+
+  }
 }
