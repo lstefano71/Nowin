@@ -5,10 +5,27 @@ using System.Threading.Tasks;
 using WildHeart.Owin.Middleware;
 using Microsoft.Owin.StaticFiles;
 using System.Collections.Generic;
+using Microsoft.Owin.Hosting;
 
 namespace WildHeart.Owin
 {
-	public static class APLHelper
+  public class SimpleConfiguration
+  {
+    public object FS { get; set; }
+    public string Root { get; set; }
+    public string Url { get; set; }
+    public string API { get; set; }
+    public string PoolName { get; set; }
+
+
+    public IDictionary<string,object> Settings { get; }
+    public SimpleConfiguration()
+    {
+      Settings = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+    }
+  }
+
+  public static class APLHelper
 	{
     public static void AddMimeTypes(FileServerOptions opts, string def)
     {
@@ -59,8 +76,15 @@ namespace WildHeart.Owin
 			});
 		}
 
+    public static IAppBuilder Map(IAppBuilder app, SimpleConfiguration cfg, string path, Action<IAppBuilder, SimpleConfiguration> callback)
+    {    
+      return app.Map(path, sub => callback(sub, cfg));
+    }
+
+
     public static IAppBuilder UseFromPool(IAppBuilder app, string pool, string fnname, Func<string, string, IOwinContext, bool> callback)
     {
+
       return app.Use((ctx, next) => {
         bool res = callback(pool, fnname, ctx);
         if (!res)
@@ -68,6 +92,17 @@ namespace WildHeart.Owin
         return Task.Delay(0);
       });
     }
+
+    public static IDisposable Start(SimpleConfiguration cfg, Action<IAppBuilder, SimpleConfiguration> builder)
+    {
+      return WebApp.Start(cfg.Url, app => builder(app, cfg));
+    }
+
+    public static object Test(Func<object,object> callback)
+    {
+      return callback(null);
+    }
+
 
   }
 }
