@@ -17,8 +17,9 @@ namespace Nowin
         Func<IDictionary<string, object>, Task> _app;
         IDictionary<string, object> _capabilities;
         string _serverHeader = "Nowin";
-        private ExecutionContextFlow _contextFlow  = ExecutionContextFlow.SuppressAlways;
-        private TimeSpan _retrySocketBindingTime;
+        ExecutionContextFlow _contextFlow = ExecutionContextFlow.SuppressAlways;
+        TimeSpan _retrySocketBindingTime;
+        bool _clientCertificateRequired;
 
         public static ServerBuilder New()
         {
@@ -38,7 +39,7 @@ namespace Nowin
         }
         public ServerBuilder SetPort(int port)
         {
-            if (port < IPEndPoint.MinPort || port > IPEndPoint.MaxPort) throw new ArgumentOutOfRangeException("port", port, "must be in range of <0,65535>");
+            if (port < IPEndPoint.MinPort || port > IPEndPoint.MaxPort) throw new ArgumentOutOfRangeException(nameof(port), port, "must be in range of <0,65535>");
             InitEndPointIfNullByDefault();
             _endPoint.Port = port;
             return this;
@@ -74,9 +75,15 @@ namespace Nowin
             return this;
         }
 
+        public ServerBuilder RequireClientCertificate()
+        {
+            _clientCertificateRequired = true;
+            return this;
+        }
+
         public ServerBuilder SetBufferSize(int size)
         {
-            if (size < 1024 || size > 65536) throw new ArgumentOutOfRangeException("size", size, "Must be in range <1024,65536>");
+            if (size < 1024 || size > 65536) throw new ArgumentOutOfRangeException(nameof(size), size, "Must be in range <1024,65536>");
             _bufferSize = size;
             return this;
         }
@@ -101,7 +108,7 @@ namespace Nowin
 
         public ServerBuilder SetServerHeader(string value)
         {
-            _serverHeader = value;
+            _serverHeader = string.IsNullOrWhiteSpace(value) ? null : value;
             return this;
         }
 
@@ -117,19 +124,11 @@ namespace Nowin
             return s;
         }
 
-        public ExecutionContextFlow ContextFlow
-        {
-            get { return _contextFlow; }
-        }
+        public ExecutionContextFlow ContextFlow => _contextFlow;
 
         IConnectionAllocationStrategy IServerParameters.ConnectionAllocationStrategy
-        {
-            get
-            {
-                return _connectionAllocationStrategy ??
-                       (_connectionAllocationStrategy = new ConnectionAllocationStrategy(256, 256, 1024 * 1024, 32));
-            }
-        }
+            => _connectionAllocationStrategy ??
+              (_connectionAllocationStrategy = new ConnectionAllocationStrategy(256, 256, 1024 * 1024, 32));
 
         IPEndPoint IServerParameters.EndPoint
         {
@@ -140,10 +139,7 @@ namespace Nowin
             }
         }
 
-        X509Certificate IServerParameters.Certificate
-        {
-            get { return _certificate; }
-        }
+        X509Certificate IServerParameters.Certificate => _certificate;
 
         int IServerParameters.BufferSize
         {
@@ -154,32 +150,16 @@ namespace Nowin
             }
         }
 
-        Func<IDictionary<string, object>, Task> IServerParameters.OwinApp
-        {
-            get { return _app; }
-        }
+        Func<IDictionary<string, object>, Task> IServerParameters.OwinApp => _app;
 
-        IDictionary<string, object> IServerParameters.OwinCapabilities
-        {
-            get { return _capabilities; }
-        }
+        IDictionary<string, object> IServerParameters.OwinCapabilities => _capabilities;
 
-        public string ServerHeader { get { return _serverHeader; }}
+        public string ServerHeader => _serverHeader;
 
-        public TimeSpan RetrySocketBindingTime
-        {
-            get
-            {
-                return _retrySocketBindingTime;
-            }
-        }
+        public TimeSpan RetrySocketBindingTime => _retrySocketBindingTime;
 
-        public SslProtocols Protocols
-        {
-            get
-            {
-                return _protocols;
-            }
-        }
+        public SslProtocols Protocols => _protocols;
+
+        public bool ClientCertificateRequired => _clientCertificateRequired;
     }
 }

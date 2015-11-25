@@ -14,7 +14,7 @@ namespace Nowin
         {
             if (properties == null)
             {
-                throw new ArgumentNullException("properties");
+                throw new ArgumentNullException(nameof(properties));
             }
 
             properties[OwinKeys.Version] = "1.0";
@@ -31,12 +31,12 @@ namespace Nowin
         {
             if (app == null)
             {
-                throw new ArgumentNullException("app");
+                throw new ArgumentNullException(nameof(app));
             }
 
             if (properties == null)
             {
-                throw new ArgumentNullException("properties");
+                throw new ArgumentNullException(nameof(properties));
             }
 
             var capabilities = properties.Get<IDictionary<string, object>>(OwinKeys.ServerCapabilitiesKey)
@@ -72,7 +72,13 @@ namespace Nowin
                 builder.SetOwinCapabilities(capabilities);
                 var certificate = address.Get<X509Certificate>("certificate");
                 if (certificate != null)
+                {
                     builder.SetCertificate(certificate);
+                    var clientCertificateRequired = address.Get<string>("clientCertificate.required");
+                    bool required;
+                    if (!string.IsNullOrEmpty(clientCertificateRequired) && bool.TryParse(clientCertificateRequired, out required) && required)
+                        builder.RequireClientCertificate();
+                }
                 servers.Add(builder.Build());
             }
 

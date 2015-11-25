@@ -16,18 +16,18 @@ namespace Nowin
         readonly ITransportLayerHandler _next;
         readonly X509Certificate _serverCertificate;
         readonly SslProtocols _protocols;
+        readonly bool _clientCertificateRequired;
         SslStream _ssl;
         Task _authenticateTask;
         byte[] _recvBuffer;
         int _recvOffset;
         int _recvLength;
         readonly InputStream _inputStream;
-        IPEndPoint _remoteEndPoint;
-        IPEndPoint _localEndPoint;
 
-        public SslTransportHandler(ITransportLayerHandler next, X509Certificate serverCertificate, SslProtocols protocols)
+        public SslTransportHandler(ITransportLayerHandler next, X509Certificate serverCertificate, SslProtocols protocols, bool clientCertificateRequired)
         {
             _protocols = protocols;
+            _clientCertificateRequired = clientCertificateRequired;
             _next = next;
             _serverCertificate = serverCertificate;
             _inputStream = new InputStream(this);
@@ -63,10 +63,7 @@ namespace Nowin
                     _tcsReceive.SetCanceled();
                 else
                     _tcsReceive.SetResult(length);
-                if (_callbackReceive != null)
-                {
-                    _callbackReceive(_tcsReceive.Task);
-                }
+                _callbackReceive?.Invoke(_tcsReceive.Task);
             }
 
             public override int Read(byte[] buffer, int offset, int count)
@@ -119,10 +116,7 @@ namespace Nowin
                 {
                     _tcsSend.SetException(exception);
                 }
-                if (_callbackSend != null)
-                {
-                    _callbackSend(_tcsSend.Task);
-                }
+                _callbackSend?.Invoke(_tcsSend.Task);
             }
 
             public override void Flush()
@@ -162,25 +156,13 @@ namespace Nowin
                 }
             }
 
-            public override bool CanRead
-            {
-                get { return true; }
-            }
+            public override bool CanRead => true;
 
-            public override bool CanSeek
-            {
-                get { return false; }
-            }
+            public override bool CanSeek => false;
 
-            public override bool CanWrite
-            {
-                get { return true; }
-            }
+            public override bool CanWrite => true;
 
-            public override long Length
-            {
-                get { return long.MaxValue; }
-            }
+            public override long Length => long.MaxValue;
 
             public override long Position { get; set; }
         }
@@ -195,37 +177,44 @@ namespace Nowin
         public void PrepareAccept()
         {
             _ssl = null;
+            var t = _authenticateTask;
+            _authenticateTask = null;
+            if (t != null && !t.IsCompleted)
+            {
+                t.ContinueWith((t2, next) =>
+                {
+                    ((ITransportLayerHandler)next).PrepareAccept();
+                }, _next);
+                return;
+            }
             _next.PrepareAccept();
         }
 
         public void FinishAccept(byte[] buffer, int offset, int length, IPEndPoint remoteEndPoint, IPEndPoint localEndPoint)
         {
-            _remoteEndPoint = remoteEndPoint;
-            _localEndPoint = localEndPoint;
             Debug.Assert(length == 0);
             try
             {
                 _ssl = new SslStream(_inputStream, true);
-                _authenticateTask = _ssl.AuthenticateAsServerAsync(_serverCertificate, false, _protocols, false).ContinueWith((t, selfObject) =>
+                _authenticateTask = _ssl.AuthenticateAsServerAsync(_serverCertificate, _clientCertificateRequired, _protocols, false).ContinueWith((t, selfObject) =>
                 {
                     var self = (SslTransportHandler)selfObject;
                     if (t.IsFaulted || t.IsCanceled)
-                        self._next.FinishAccept(null, 0, 0, null, null);
+                        self.Callback.StartDisconnect();
                     else
-                        self._ssl.ReadAsync(self._recvBuffer, self._recvOffset, self._recvLength).ContinueWith((t2, selfObject2) =>
-                        {
-                            var self2 = (SslTransportHandler)selfObject2;
-                            if (t2.IsFaulted || t2.IsCanceled)
-                                self2._next.FinishAccept(null, 0, 0, null, null);
-                            else
-                                self2._next.FinishAccept(self2._recvBuffer, self2._recvOffset, t2.Result, self2._remoteEndPoint, self2._localEndPoint);
-                        }, self);
+                        _next.SetRemoteCertificate(_ssl.RemoteCertificate);
                 }, this);
+                _next.FinishAccept(_recvBuffer, _recvOffset, 0, remoteEndPoint, localEndPoint);
             }
             catch (Exception)
             {
                 Callback.StartDisconnect();
             }
+        }
+
+        public void SetRemoteCertificate(X509Certificate remoteCertificate)
+        {
+            throw new InvalidOperationException();
         }
 
         public void FinishReceive(byte[] buffer, int offset, int length)
@@ -253,6 +242,29 @@ namespace Nowin
             _recvLength = length;
             try
             {
+                if (!_authenticateTask.IsCompleted)
+                {
+                    _authenticateTask.ContinueWith((t, selfObject) =>
+                    {
+                        var self = (SslTransportHandler)selfObject;
+                        if (t.IsCanceled || t.IsFaulted)
+                        {
+                            self._next.FinishReceive(null, 0, -1);
+                        }
+                        else
+                        {
+                            _ssl.ReadAsync(self._recvBuffer, self._recvOffset, self._recvLength).ContinueWith((t2, selfObject2) =>
+                            {
+                                var self2 = (SslTransportHandler)selfObject2;
+                                if (t2.IsFaulted || t2.IsCanceled || t2.Result == 0)
+                                    self._next.FinishReceive(null, 0, -1);
+                                else
+                                    self._next.FinishReceive(self2._recvBuffer, self2._recvOffset, t2.Result);
+                            }, self);
+                        }
+                    }, this);
+                    return;
+                }
                 _ssl.ReadAsync(buffer, offset, length).ContinueWith((t, selfObject) =>
                 {
                     var self = (SslTransportHandler)selfObject;
@@ -297,16 +309,7 @@ namespace Nowin
 
         public void StartDisconnect()
         {
-            var t = _authenticateTask;
-            _authenticateTask = null;
-            if (t != null)
-            {
-                t.ContinueWith((t2, callback) => ((ITransportLayerCallback)callback).StartDisconnect(), Callback);
-            }
-            else
-            {
-                Callback.StartDisconnect();
-            }
+            Callback.StartDisconnect();
         }
     }
 }
