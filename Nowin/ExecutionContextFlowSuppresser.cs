@@ -5,9 +5,9 @@ namespace Nowin
 {
     public static class ExecutionContextFlowSuppresser
     {
-        static Func<IDisposable> _flow = () => NullDisposable.Instance;
-        static Func<IDisposable> _suppressOnAsync = SuppressOnAsync;
-        static Func<IDisposable> _suppressAlways = SuppressAlways;
+        static readonly Func<IDisposable> _flow = () => NullDisposable.Instance;
+        static readonly Func<IDisposable> _suppressOnAsync = SuppressOnAsync;
+        static readonly Func<IDisposable> _suppressAlways = SuppressAlways;
 
         public static Func<IDisposable> CreateContextSuppresser(ExecutionContextFlow contextFlow)
         {
@@ -20,18 +20,18 @@ namespace Nowin
                 case ExecutionContextFlow.Flow:
                     return _flow;
                 default:
-                    throw new ArgumentOutOfRangeException("contextFlow");
+                    throw new ArgumentOutOfRangeException(nameof(contextFlow));
             }
         }
 
-        private static IDisposable SuppressAlways()
+        static IDisposable SuppressAlways()
         {
             if (!ExecutionContext.IsFlowSuppressed())
                 ExecutionContext.SuppressFlow();
             return NullDisposable.Instance;
         }
 
-        private static IDisposable SuppressOnAsync()
+        static IDisposable SuppressOnAsync()
         {
             return ExecutionContext.IsFlowSuppressed()
                 ? NullDisposable.Instance

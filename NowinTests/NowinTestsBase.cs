@@ -116,11 +116,11 @@ namespace NowinTests
         [Fact]
         public void AsyncThrowAppRespond500()
         {
-            var callCancelled = false;
+            var ev = new EventWaitHandle(false,EventResetMode.ManualReset);
             var listener = CreateServer(
                 async env =>
                 {
-                    GetCallCancelled(env).Register(() => callCancelled = true);
+                    GetCallCancelled(env).Register(() => ev.Set());
                     await Task.Delay(1);
                     throw new InvalidOperationException();
                 });
@@ -129,7 +129,7 @@ namespace NowinTests
             Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
             Assert.NotNull(response.Content.Headers.ContentLength);
             Assert.Equal(0, response.Content.Headers.ContentLength.Value);
-            Assert.True(callCancelled);
+            ev.WaitOne();
         }
 
         [Fact]
@@ -301,6 +301,24 @@ namespace NowinTests
         }
 
         [Fact]
+        public void Error500IsAllowedToCustomizeResopnse()
+        {
+            var listener = CreateServer(
+                async env =>
+                {
+                    env["owin.ResponseStatusCode"] = 500;
+                    env["owin.ResponseReasonPhrase"] = "BADorGOOD";
+                    var responseStream = env.Get<Stream>("owin.ResponseBody");
+                    await responseStream.WriteAsync(new byte[] { 65 },0,1);
+                    responseStream.Flush();
+                });
+            var response = SendGetRequest(listener, HttpClientAddress);
+            Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+            Assert.Equal("BADorGOOD", response.ReasonPhrase);
+            Assert.Equal("A", response.Content.ReadAsStringAsync().Result);
+        }
+
+        [Fact]
         public void ConnectionClosedAfterStartReturningResponseAndAsyncThrowing()
         {
             var callCancelled = false;
@@ -335,6 +353,8 @@ namespace NowinTests
         [InlineData("", "/", "")]
         [InlineData("path?query", "/path", "query")]
         [InlineData("pathBase/path?query", "/pathBase/path", "query")]
+        [InlineData("é?ù", "/é", "ù")]
+        [InlineData("pathBase/path?query%20ge", "/pathBase/path", "query%20ge")]
         public void PathAndQueryParsing(string clientString, string expectedPath, string expectedQuery)
         {
             clientString = HttpClientAddress + clientString;
@@ -1338,8 +1358,8 @@ namespace NowinTests
                 {
                     Assert.False(insideDelay);
                     var disconnectAction = env.Get<Action>("common.Disconnect");
-                    disconnectAction();
                     insideDelay = true;
+                    disconnectAction();
                     await Task.Delay(100);
                     insideDelay = false;
                     throw new Exception("disconnect");
@@ -1394,7 +1414,7 @@ namespace NowinTests
             }
         }
 
-        static CancellationToken GetCallCancelled(IDictionary<string, object> env)
+        public static CancellationToken GetCallCancelled(IDictionary<string, object> env)
         {
             return env.Get<CancellationToken>("owin.CallCancelled");
         }
