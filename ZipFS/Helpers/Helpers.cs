@@ -10,13 +10,16 @@ using Microsoft.Owin.Hosting;
 namespace WildHeart.Owin
 {
   public class SimpleConfiguration
-  {
+  {		
     public object FS { get; set; }
     public string Root { get; set; }
     public string Url { get; set; }
     public string API { get; set; }
     public string PoolName { get; set; }
 
+		public int Port { get; set; }
+
+		public string ServerFactory { get; set; }
 
     public IDictionary<string,object> Settings { get; }
     public SimpleConfiguration()
@@ -95,7 +98,18 @@ namespace WildHeart.Owin
 
     public static IDisposable Start(SimpleConfiguration cfg, Action<IAppBuilder, SimpleConfiguration> builder)
     {
-      return WebApp.Start(cfg.Url, app => builder(app, cfg));
+			var start = new StartOptions() {
+				Port = cfg.Port
+			};
+
+			if(cfg.Url != null) {
+				start.Urls.Add(cfg.Url);
+			}
+
+			if(cfg.ServerFactory != null) {
+				start.ServerFactory = cfg.ServerFactory;
+			}
+      return WebApp.Start(start, app => builder(app, cfg));
     }
 
     public static object Test(Func<object,object> callback)

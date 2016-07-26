@@ -36,7 +36,7 @@ namespace OwinHostingSample
 		static void Main(string[] args)
 		{
 			var options = new StartOptions {
-				// ServerFactory = "Nowin",
+				ServerFactory = "Nowin",
 				Port = 8080
 			};
 
