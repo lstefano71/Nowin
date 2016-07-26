@@ -19,22 +19,23 @@ namespace Nowin
         [Flags]
         enum State
         {
-            Receive = 1,
-            Send = 2,
-            Disconnect = 4,
-            Aborting = 8,
-            DelayedAccept = 16
+            Receive = 1, // Accept or Receive in process
+            Send = 2, // Send in process
+            Disconnect = 4, // Disconnect in process
+            Aborting = 8, // Disconnect or wait for next StartAccept => Fast Failing And Receive or Send
+            DelayedAccept = 16 // Waiting Socket to stop receive after disconnect
         }
 
         readonly ITransportLayerHandler _handler;
         readonly Socket _listenSocket;
         readonly Server _server;
         readonly int _handlerId;
+        SocketAsyncEventArgs _acceptEvent;
         SocketAsyncEventArgs _receiveEvent;
         SocketAsyncEventArgs _sendEvent;
         SocketAsyncEventArgs _disconnectEvent;
         Socket _socket;
-        #pragma warning disable 420
+#pragma warning disable 420
         volatile int _state;
         readonly Func<IDisposable> _contextSuppresser;
 
@@ -52,15 +53,19 @@ namespace Nowin
         void RecreateSaeas()
         {
             DisposeEventArgs();
+            _acceptEvent = new SocketAsyncEventArgs();
             _receiveEvent = new SocketAsyncEventArgs();
             _sendEvent = new SocketAsyncEventArgs();
             _disconnectEvent = new SocketAsyncEventArgs();
+            _acceptEvent.Completed += IoCompleted;
             _receiveEvent.Completed += IoCompleted;
             _sendEvent.Completed += IoCompleted;
             _disconnectEvent.Completed += IoCompleted;
+            _acceptEvent.DisconnectReuseSocket = RuntimeCorrectlyImplementsDisconnectReuseSocket;
             _receiveEvent.DisconnectReuseSocket = RuntimeCorrectlyImplementsDisconnectReuseSocket;
             _sendEvent.DisconnectReuseSocket = RuntimeCorrectlyImplementsDisconnectReuseSocket;
             _disconnectEvent.DisconnectReuseSocket = RuntimeCorrectlyImplementsDisconnectReuseSocket;
+            _acceptEvent.UserToken = this;
             _receiveEvent.UserToken = this;
             _sendEvent.UserToken = this;
             _disconnectEvent.UserToken = this;
@@ -80,7 +85,7 @@ namespace Nowin
             switch (e.LastOperation)
             {
                 case SocketAsyncOperation.Accept:
-                    Debug.Assert(e == self._receiveEvent);
+                    Debug.Assert(e == self._acceptEvent);
                     if (e.SocketError != SocketError.Success)
                     {
                         return;
@@ -112,12 +117,12 @@ namespace Nowin
                 oldState = _state;
                 newState = oldState & ~(int)State.Receive;
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
-            var bytesTransfered = _receiveEvent.BytesTransferred;
-            var socketError = _receiveEvent.SocketError;
-            
+            var bytesTransfered = _acceptEvent.BytesTransferred;
+            var socketError = _acceptEvent.SocketError;
+
             if (bytesTransfered >= 0 && socketError == SocketError.Success)
             {
-                _socket = _receiveEvent.AcceptSocket;
+                _socket = _acceptEvent.AcceptSocket;
                 IPEndPoint remoteEndpoint = null;
                 IPEndPoint localEndpoint = null;
                 try
@@ -131,7 +136,7 @@ namespace Nowin
                 if (remoteEndpoint != null && localEndpoint != null)
                 {
                     _server.ReportNewConnectedClient();
-                    _handler.FinishAccept(_receiveEvent.Buffer, _receiveEvent.Offset, bytesTransfered,
+                    _handler.FinishAccept(_acceptEvent.Buffer, _acceptEvent.Offset, bytesTransfered,
                         remoteEndpoint, localEndpoint);
                     return;
                 }
@@ -146,27 +151,21 @@ namespace Nowin
         {
             bool postponedAccept;
             var bytesTransferred = _receiveEvent.BytesTransferred;
+
+            int oldState, newState;
+            do
+            {
+                oldState = _state;
+                postponedAccept = (oldState & (int)State.DelayedAccept) != 0;
+                newState = oldState & ~(int)(State.Receive | State.DelayedAccept);
+            } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
+
             if (bytesTransferred > 0 && _receiveEvent.SocketError == SocketError.Success)
             {
-                int oldState, newState;
-                do
-                {
-                    oldState = _state;
-                    postponedAccept = (oldState & (int)State.DelayedAccept) != 0;
-                    newState = oldState & ~(int)(State.Receive | State.DelayedAccept);
-
-                } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
                 _handler.FinishReceive(_receiveEvent.Buffer, _receiveEvent.Offset, bytesTransferred);
             }
             else
             {
-                int oldState, newState;
-                do
-                {
-                    oldState = _state;
-                    postponedAccept = (oldState & (int)State.DelayedAccept) != 0;
-                    newState = (oldState & ~(int)(State.Receive | State.DelayedAccept));
-                } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
                 _handler.FinishReceive(null, 0, -1);
             }
             if (postponedAccept)
@@ -197,11 +196,11 @@ namespace Nowin
             {
                 oldState = _state;
                 delayedAccept = (oldState & (int)State.Receive) != 0;
-                newState = (oldState & ~(int)(State.Disconnect | State.Aborting)) | (delayedAccept ? (int)State.DelayedAccept : 0);
+                newState = (oldState & ~(int)State.Disconnect) | (delayedAccept ? (int)State.DelayedAccept : 0);
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
             if (!RuntimeCorrectlyImplementsDisconnectReuseSocket)
             {
-                _receiveEvent.AcceptSocket = null;
+                _acceptEvent.AcceptSocket = null;
                 _socket.Close();
                 _socket.Dispose();
             }
@@ -220,14 +219,15 @@ namespace Nowin
                 oldState = _state;
                 if ((oldState & (int)State.Receive) != 0)
                     throw new InvalidOperationException("Already receiving or accepting");
-                newState = oldState | (int)State.Receive & ~(int)State.Aborting;
+                newState = (oldState | (int)State.Receive) & ~(int)State.Aborting;
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
             bool willRaiseEvent;
             try
             {
-                _receiveEvent.SetBuffer(buffer, offset, length);
+                _acceptEvent.SetBuffer(buffer, offset, length);
+
                 using (StopExecutionContextFlow())
-                    willRaiseEvent = _listenSocket.AcceptAsync(_receiveEvent);
+                    willRaiseEvent = _listenSocket.AcceptAsync(_acceptEvent);
             }
             catch (ObjectDisposedException)
             {
@@ -235,7 +235,7 @@ namespace Nowin
             }
             if (!willRaiseEvent)
             {
-                var e = _receiveEvent;
+                var e = _acceptEvent;
                 TraceSources.CoreDebug.TraceInformation("ID{0,-5} Sync Accept {1} {2} {3} {4}", _handlerId, e.LastOperation, e.Offset, e.BytesTransferred, e.SocketError);
                 ProcessAccept();
             }
@@ -255,6 +255,11 @@ namespace Nowin
                 oldState = _state;
                 if ((oldState & (int)State.Receive) != 0)
                     throw new InvalidOperationException("Already receiving or accepting");
+                if ((oldState & (int)State.Aborting) != 0)
+                {
+                    _handler.FinishReceive(null, 0, -1);
+                    return;
+                }
                 newState = oldState | (int)State.Receive;
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
             bool willRaiseEvent;
@@ -285,6 +290,11 @@ namespace Nowin
                 oldState = _state;
                 if ((oldState & (int)State.Send) != 0)
                     throw new InvalidOperationException("Already sending");
+                if ((oldState & (int)State.Aborting) != 0)
+                {
+                    _handler.FinishSend(new IOException());
+                    return;
+                }
                 newState = oldState | (int)State.Send;
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
             bool willRaiseEvent;
@@ -315,7 +325,7 @@ namespace Nowin
                 oldState = _state;
                 if ((oldState & (int)State.Disconnect) != 0)
                     throw new InvalidOperationException("Already disconnecting");
-                newState = oldState | (int)State.Disconnect;
+                newState = oldState | (int)(State.Disconnect | State.Aborting);
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
             bool willRaiseEvent;
             try
